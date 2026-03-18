@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Field Mapper</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TM Left on Site</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -23,20 +23,26 @@
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  body {
+  html, body {
     font-family: 'DM Mono', monospace;
     background: var(--paper);
     color: var(--ink);
-    height: 100vh;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* ── Layout shell ── */
+  .app {
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    height: 100vh;
+    height: 100dvh; /* dynamic viewport for mobile */
   }
 
   header {
     background: var(--ink);
     color: var(--paper);
-    padding: 0 24px;
+    padding: 0 16px;
     height: 52px;
     display: flex;
     align-items: center;
@@ -44,32 +50,88 @@
     flex-shrink: 0;
     z-index: 1000;
   }
-  header h1 { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.05em; text-transform: uppercase; }
-  .header-right { display: flex; align-items: center; gap: 14px; }
-  .marker-count { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.08em; }
+  header h1 {
+    font-family: 'Syne', sans-serif; font-weight: 800;
+    font-size: clamp(0.8rem, 3vw, 1.1rem);
+    letter-spacing: 0.04em; text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .marker-count { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.06em; white-space: nowrap; }
   .marker-count span { color: var(--accent); font-weight: 500; }
 
   .sync-badge {
-    font-size: 0.62rem; letter-spacing: 0.08em; padding: 3px 8px;
-    border-radius: 10px; display: flex; align-items: center; gap: 5px;
+    font-size: 0.58rem; letter-spacing: 0.06em; padding: 3px 7px;
+    border-radius: 10px; display: flex; align-items: center; gap: 4px;
     background: rgba(245,130,13,0.15); color: #f5820d;
-    border: 1px solid rgba(245,130,13,0.3); transition: all 0.3s;
+    border: 1px solid rgba(245,130,13,0.3); transition: all 0.3s; white-space: nowrap;
   }
   .sync-badge.connected { background: rgba(45,122,79,0.15); color: var(--success); border-color: rgba(45,122,79,0.3); }
   .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
   .sync-dot.pulse { animation: pulse 1.5s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-  .main { display: flex; flex: 1; overflow: hidden; }
-  #map { flex: 1; cursor: crosshair !important; }
-
-  .sidebar {
-    width: 360px; flex-shrink: 0;
-    background: var(--panel); border-left: 1px solid var(--border);
-    display: flex; flex-direction: column; overflow: hidden;
+  /* ── DESKTOP: map left, sidebar right ── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
   }
 
-  .sidebar-tabs { display: flex; border-bottom: 1px solid var(--border); }
+  #map {
+    flex: 1;
+    min-height: 0;
+    cursor: crosshair !important;
+    z-index: 1;
+  }
+
+  .sidebar {
+    width: 360px;
+    flex-shrink: 0;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 2;
+  }
+
+  /* ── MOBILE: stacked layout ── */
+  @media (max-width: 700px) {
+    .main {
+      flex-direction: column;
+    }
+
+    #map {
+      flex: 0 0 45vh;
+      width: 100%;
+      cursor: default !important;
+    }
+
+    .sidebar {
+      width: 100%;
+      flex: 1;
+      border-left: none;
+      border-top: 2px solid var(--border);
+      min-height: 0;
+    }
+
+    header h1 { font-size: 0.85rem; }
+    .sync-badge { display: none; } /* hide on very small screens to save space */
+
+    .btn-row { padding: 10px 14px; }
+    .form-area { padding: 12px 14px; }
+
+    /* Larger tap targets on mobile */
+    .tab-btn { padding: 14px 8px; font-size: 0.7rem; }
+    .btn { padding: 13px 12px; font-size: 0.72rem; }
+    select, input[type="number"], input[type="text"] { padding: 10px 10px; font-size: 0.85rem; }
+    .filter-btn { padding: 8px 6px; font-size: 0.62rem; }
+  }
+
+  /* ── Sidebar internals ── */
+  .sidebar-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .tab-btn {
     flex: 1; padding: 12px 8px;
     font-family: 'DM Mono', monospace; font-size: 0.65rem;
@@ -78,25 +140,25 @@
     color: var(--muted); border-bottom: 2px solid transparent; transition: all 0.15s;
   }
   .tab-btn.active { color: var(--ink); border-bottom-color: var(--accent); }
-  .tab-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  .tab-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; min-height: 0; }
   .tab-panel.active { display: flex; }
 
-  .form-area { flex: 1; padding: 16px 20px; overflow-y: auto; }
+  .form-area { flex: 1; padding: 14px 20px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
   .instruction-box {
     background: var(--ink); color: var(--paper);
     padding: 10px 14px; border-radius: 4px;
-    font-size: 0.67rem; line-height: 1.6; margin-bottom: 16px;
+    font-size: 0.67rem; line-height: 1.6; margin-bottom: 14px;
   }
   .instruction-box strong { color: var(--accent); font-weight: 500; }
 
   .section-divider {
     font-size: 0.58rem; letter-spacing: 0.15em; text-transform: uppercase;
     color: var(--muted); border-top: 1px solid var(--border);
-    padding-top: 12px; margin: 12px 0 10px;
+    padding-top: 10px; margin: 10px 0 8px;
   }
 
-  .field-group { margin-bottom: 13px; }
+  .field-group { margin-bottom: 12px; }
 
   label {
     display: block; font-size: 0.6rem; letter-spacing: 0.12em;
@@ -114,9 +176,9 @@
   .info-display.error     { color: var(--accent); border-color: var(--accent); }
 
   select, input[type="number"], input[type="text"] {
-    width: 100%; padding: 7px 10px;
+    width: 100%; padding: 8px 10px;
     border: 1px solid var(--border); background: var(--paper);
-    font-family: 'DM Mono', monospace; font-size: 0.77rem;
+    font-family: 'DM Mono', monospace; font-size: 0.78rem;
     color: var(--ink); border-radius: 3px; outline: none;
     transition: border-color 0.15s; appearance: none; -webkit-appearance: none;
   }
@@ -139,10 +201,10 @@
   .photo-preview img { width: 100%; height: 75px; object-fit: cover; display: block; }
   .photo-name { font-size: 0.6rem; color: var(--success); margin-top: 3px; text-align: center; }
 
-  .btn-row { display: flex; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .btn-row { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
   .btn {
-    flex: 1; padding: 10px 12px; font-family: 'DM Mono', monospace;
-    font-size: 0.67rem; letter-spacing: 0.1em; text-transform: uppercase;
+    flex: 1; padding: 11px 12px; font-family: 'DM Mono', monospace;
+    font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
     border: none; border-radius: 3px; cursor: pointer; transition: all 0.15s; font-weight: 500;
   }
   .btn-primary { background: var(--ink); color: var(--paper); }
@@ -153,17 +215,17 @@
 
   /* Records */
   .records-header {
-    padding: 12px 20px; border-bottom: 1px solid var(--border);
+    padding: 11px 20px; border-bottom: 1px solid var(--border);
     display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
   }
   .records-header h3 { font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.05em; }
 
   .filter-row {
-    display: flex; gap: 6px; padding: 10px 12px;
+    display: flex; gap: 6px; padding: 8px 12px;
     border-bottom: 1px solid var(--border); flex-shrink: 0;
   }
   .filter-btn {
-    flex: 1; padding: 5px 6px; font-family: 'DM Mono', monospace;
+    flex: 1; padding: 6px 6px; font-family: 'DM Mono', monospace;
     font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase;
     border: 1px solid var(--border); background: transparent;
     color: var(--muted); border-radius: 3px; cursor: pointer; transition: all 0.15s;
@@ -171,7 +233,7 @@
   .filter-btn.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
   .filter-btn.active.removed-filter { background: var(--removed); border-color: var(--removed); }
 
-  .records-list { flex: 1; overflow-y: auto; padding: 10px; }
+  .records-list { flex: 1; overflow-y: auto; padding: 10px; -webkit-overflow-scrolling: touch; min-height: 0; }
 
   .record-card {
     background: var(--paper); border: 1px solid var(--border);
@@ -181,11 +243,11 @@
   }
   .record-card:hover { border-color: var(--ink); }
   .record-card.is-removed {
-    opacity: 0.6;
-    background: #f0eef8;
-    border-color: #d4c8e8;
+    opacity: 0.85;
+    background: #d8d4e4;
+    border-color: #b0a8c8;
   }
-  .record-card.is-removed:hover { border-color: var(--removed); opacity: 0.85; }
+  .record-card.is-removed:hover { border-color: var(--removed); }
 
   .record-thumb {
     width: 40px; height: 40px; border-radius: 3px;
@@ -193,10 +255,13 @@
     display: flex; align-items: center; justify-content: center; font-size: 1rem; overflow: hidden;
   }
   .record-thumb img { width: 100%; height: 100%; object-fit: cover; }
-  .record-thumb.greyed { filter: grayscale(1); opacity: 0.5; }
+  .record-thumb.greyed { filter: grayscale(1) brightness(0.55); }
 
   .record-info { flex: 1; min-width: 0; }
-  .record-type { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 0.78rem; margin-bottom: 1px; display: flex; align-items: center; gap: 5px; }
+  .record-type {
+    font-family: 'Syne', sans-serif; font-weight: 700; font-size: 0.78rem;
+    margin-bottom: 1px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  }
   .removed-badge {
     font-size: 0.55rem; letter-spacing: 0.08em; text-transform: uppercase;
     background: var(--removed); color: #fff; padding: 1px 5px; border-radius: 8px;
@@ -206,29 +271,26 @@
   .record-meta { font-size: 0.6rem; color: var(--muted); margin-top: 2px; }
   .record-removed-date { font-size: 0.58rem; color: var(--removed); margin-top: 2px; }
 
-  .record-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; padding: 2px; line-height: 1; flex-shrink: 0; transition: color 0.1s; }
+  .record-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.9rem; padding: 4px; line-height: 1; flex-shrink: 0; transition: color 0.1s; }
   .record-del:hover { color: var(--accent); }
 
   .empty-state { text-align: center; padding: 36px 20px; color: var(--muted); font-size: 0.67rem; line-height: 2; }
   .empty-state .big { font-size: 2rem; margin-bottom: 6px; }
 
   .stats-row {
-    display: flex; gap: 0; border-top: 1px solid var(--border);
+    display: flex; border-top: 1px solid var(--border);
     flex-shrink: 0; border-bottom: 1px solid var(--border);
   }
-  .stat-box {
-    flex: 1; padding: 8px 10px; text-align: center;
-    border-right: 1px solid var(--border);
-  }
+  .stat-box { flex: 1; padding: 7px 10px; text-align: center; border-right: 1px solid var(--border); }
   .stat-box:last-child { border-right: none; }
   .stat-num { font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 800; }
   .stat-num.active-col { color: var(--accent); }
   .stat-num.removed-col { color: var(--removed); }
-  .stat-label { font-size: 0.55rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-top: 1px; }
+  .stat-label { font-size: 0.52rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-top: 1px; }
 
-  .export-row { padding: 12px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .export-row { padding: 10px 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
   .btn-export {
-    width: 100%; padding: 10px;
+    width: 100%; padding: 11px;
     font-family: 'DM Mono', monospace; font-size: 0.68rem;
     letter-spacing: 0.1em; text-transform: uppercase;
     background: var(--success); color: #fff; border: none; border-radius: 3px;
@@ -238,7 +300,7 @@
   .btn-export:hover { opacity: 0.88; }
   .btn-export:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
 
-  /* Map marker styles */
+  /* Markers */
   .custom-marker {
     width: 28px; height: 28px; border-radius: 50% 50% 50% 0;
     transform: rotate(-45deg); border: 2px solid #fff;
@@ -246,14 +308,15 @@
     display: flex; align-items: center; justify-content: center;
   }
   .custom-marker.greyed {
-    filter: grayscale(1); opacity: 0.45;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    background: #555 !important;
+    filter: grayscale(1) brightness(0.55);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
   }
   .marker-emoji { transform: rotate(45deg); font-size: 11px; }
 
-  /* Popup TM Removed button */
+  /* Popup */
   .popup-remove-btn {
-    display: block; width: 100%; margin-top: 10px; padding: 7px 10px;
+    display: block; width: 100%; margin-top: 10px; padding: 8px 10px;
     font-family: 'DM Mono', monospace; font-size: 0.68rem;
     letter-spacing: 0.08em; text-transform: uppercase;
     background: var(--removed); color: #fff; border: none;
@@ -264,12 +327,19 @@
   .popup-removed-stamp {
     display: block; width: 100%; margin-top: 10px; padding: 7px 10px;
     font-family: 'DM Mono', monospace; font-size: 0.65rem;
-    letter-spacing: 0.08em; text-transform: uppercase;
-    background: #f0eef8; color: var(--removed);
-    border: 1px solid #d4c8e8; border-radius: 3px; text-align: center;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    background: #ede8f5; color: var(--removed);
+    border: 1px solid #c9bce0; border-radius: 3px; text-align: center;
   }
 
-  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--ink); color: var(--paper); padding: 10px 20px; border-radius: 4px; font-size: 0.7rem; letter-spacing: 0.08em; z-index: 9999; transition: transform 0.25s ease; pointer-events: none; }
+  .toast {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--ink); color: var(--paper); padding: 10px 20px;
+    border-radius: 4px; font-size: 0.7rem; letter-spacing: 0.08em;
+    z-index: 9999; transition: transform 0.25s ease; pointer-events: none;
+    white-space: nowrap;
+  }
   .toast.show { transform: translateX(-50%) translateY(0); }
 
   .type-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
@@ -284,129 +354,136 @@
 </head>
 <body>
 
-<header>
-  <h1>📍 Field Mapper</h1>
-  <div class="header-right">
-    <div class="sync-badge" id="syncBadge">
-      <span class="sync-dot pulse"></span>
-      <span id="syncLabel">Connecting…</span>
+<div class="app">
+  <header>
+    <h1>📍 TM Left on Site</h1>
+    <div class="header-right">
+      <div class="sync-badge" id="syncBadge">
+        <span class="sync-dot pulse"></span>
+        <span id="syncLabel">Connecting…</span>
+      </div>
+      <span class="marker-count">Active: <span id="countDisplay">0</span></span>
     </div>
-    <span class="marker-count">Active: <span id="countDisplay">0</span></span>
-  </div>
-</header>
+  </header>
 
-<div class="main">
-  <div id="map"></div>
+  <div class="main">
+    <div id="map"></div>
 
-  <div class="sidebar">
-    <div class="sidebar-tabs">
-      <button class="tab-btn active" onclick="switchTab('add')">Add Marker</button>
-      <button class="tab-btn" onclick="switchTab('records')">Records</button>
-    </div>
+    <div class="sidebar">
+      <div class="sidebar-tabs">
+        <button class="tab-btn active" onclick="switchTab('add')">Add Marker</button>
+        <button class="tab-btn" onclick="switchTab('records')">Records</button>
+      </div>
 
-    <!-- ADD PANEL -->
-    <div class="tab-panel active" id="tab-add">
-      <div class="form-area">
-        <div class="instruction-box">
-          <strong>→ Click anywhere on the map</strong> to drop a pin and capture coordinates, then fill in the details below.
-        </div>
-
-        <div class="section-divider">📍 Marker Details</div>
-
-        <div class="field-group">
-          <label>Marker Coordinates</label>
-          <div class="info-display" id="coordDisplay">Awaiting map click…</div>
-        </div>
-
-        <div class="field-group">
-          <label>Type</label>
-          <select id="typeSelect" onchange="checkSaveReady()">
-            <option value="">— Select type —</option>
-            <option value="Cones">🔶 Cones</option>
-            <option value="Signs">🪧 Signs</option>
-            <option value="Barriers">🚧 Barriers</option>
-            <option value="Fencing">🔒 Fencing</option>
-          </select>
-        </div>
-
-        <div class="field-group">
-          <label>Quantity</label>
-          <input type="number" id="qtyInput" min="1" placeholder="Enter quantity…" oninput="checkSaveReady()" />
-        </div>
-
-        <div class="field-group">
-          <label>Notes (optional)</label>
-          <input type="text" id="notesInput" placeholder="Any additional notes…" />
-        </div>
-
-        <div class="field-group">
-          <label>Photo (optional)</label>
-          <div class="photo-upload-area">
-            <input type="file" id="photoInput" accept="image/*" onchange="handlePhoto(event)" />
-            <div class="upload-icon">📷</div>
-            <p>Click to upload or drag &amp; drop</p>
+      <!-- ADD PANEL -->
+      <div class="tab-panel active" id="tab-add">
+        <div class="form-area">
+          <div class="instruction-box">
+            <strong>→ Tap or click the map</strong> to drop a pin, then fill in the details below.
           </div>
-          <div class="photo-preview" id="photoPreview"><img id="photoImg" src="" alt="preview"/></div>
-          <div class="photo-name" id="photoName"></div>
+
+          <div class="section-divider">📍 Marker Details</div>
+
+          <div class="field-group">
+            <label>Coordinates</label>
+            <div class="info-display" id="coordDisplay">Awaiting map tap…</div>
+          </div>
+
+          <div class="field-group">
+            <label>Your Name (optional)</label>
+            <input type="text" id="nameInput" placeholder="Enter your name…" />
+          </div>
+
+          <div class="field-group">
+            <label>Type</label>
+            <select id="typeSelect" onchange="checkSaveReady()">
+              <option value="">— Select type —</option>
+              <option value="Cones">🔶 Cones</option>
+              <option value="Signs">🪧 Signs</option>
+              <option value="Barriers">🚧 Barriers</option>
+              <option value="Fencing">🔒 Fencing</option>
+            </select>
+          </div>
+
+          <div class="field-group">
+            <label>Quantity</label>
+            <input type="number" id="qtyInput" min="1" placeholder="Enter quantity…" oninput="checkSaveReady()" />
+          </div>
+
+          <div class="field-group">
+            <label>Notes (optional)</label>
+            <input type="text" id="notesInput" placeholder="Any additional notes…" />
+          </div>
+
+          <div class="field-group">
+            <label>Photo (optional)</label>
+            <div class="photo-upload-area">
+              <input type="file" id="photoInput" accept="image/*" onchange="handlePhoto(event)" />
+              <div class="upload-icon">📷</div>
+              <p>Tap to upload a photo</p>
+            </div>
+            <div class="photo-preview" id="photoPreview"><img id="photoImg" src="" alt="preview"/></div>
+            <div class="photo-name" id="photoName"></div>
+          </div>
+
+          <div class="section-divider">🧭 Your Location</div>
+
+          <div class="field-group">
+            <label>GPS Coordinates</label>
+            <div class="info-display loading" id="userLocDisplay">
+              <span class="spinner"></span><span>Detecting location…</span>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label>Approximate Address</label>
+            <div class="info-display" id="userAddrDisplay">Waiting for GPS…</div>
+          </div>
+
         </div>
 
-        <div class="section-divider">🧭 Your Location</div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" onclick="clearForm()">Clear</button>
+          <button class="btn btn-primary" id="saveBtn" onclick="saveMarker()" disabled>Submit</button>
+        </div>
+      </div>
 
-        <div class="field-group">
-          <label>GPS Coordinates</label>
-          <div class="info-display loading" id="userLocDisplay">
-            <span class="spinner"></span><span>Detecting location…</span>
+      <!-- RECORDS PANEL -->
+      <div class="tab-panel" id="tab-records">
+        <div class="records-header">
+          <h3>All Markers</h3>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat-box">
+            <div class="stat-num active-col" id="statActive">0</div>
+            <div class="stat-label">Active</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num removed-col" id="statRemoved">0</div>
+            <div class="stat-label">Removed</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num" id="statTotal">0</div>
+            <div class="stat-label">Total</div>
           </div>
         </div>
 
-        <div class="field-group">
-          <label>Approximate Address</label>
-          <div class="info-display" id="userAddrDisplay">Waiting for GPS…</div>
+        <div class="filter-row">
+          <button class="filter-btn active" id="filterAll"      onclick="setFilter('all')">All</button>
+          <button class="filter-btn"        id="filterActive"   onclick="setFilter('active')">Active</button>
+          <button class="filter-btn removed-filter" id="filterRemoved" onclick="setFilter('removed')">Removed</button>
         </div>
 
-      </div>
-
-      <div class="btn-row">
-        <button class="btn btn-ghost" onclick="clearForm()">Clear</button>
-        <button class="btn btn-primary" id="saveBtn" onclick="saveMarker()" disabled>Save to Firebase</button>
-      </div>
-    </div>
-
-    <!-- RECORDS PANEL -->
-    <div class="tab-panel" id="tab-records">
-      <div class="records-header">
-        <h3>All Markers</h3>
-      </div>
-
-      <div class="stats-row">
-        <div class="stat-box">
-          <div class="stat-num active-col" id="statActive">0</div>
-          <div class="stat-label">Active</div>
+        <div class="records-list" id="recordsList">
+          <div class="empty-state"><div class="big">📭</div>No markers yet.<br>Tap the map to start.</div>
         </div>
-        <div class="stat-box">
-          <div class="stat-num removed-col" id="statRemoved">0</div>
-          <div class="stat-label">Removed</div>
+
+        <div class="export-row">
+          <button class="btn-export" id="exportBtn" onclick="exportToExcel()" disabled>
+            ⬇ Export All to Excel (.xlsx)
+          </button>
         </div>
-        <div class="stat-box">
-          <div class="stat-num" id="statTotal">0</div>
-          <div class="stat-label">Total</div>
-        </div>
-      </div>
-
-      <div class="filter-row">
-        <button class="filter-btn active" id="filterAll"      onclick="setFilter('all')">All</button>
-        <button class="filter-btn"        id="filterActive"   onclick="setFilter('active')">Active</button>
-        <button class="filter-btn removed-filter" id="filterRemoved" onclick="setFilter('removed')">Removed</button>
-      </div>
-
-      <div class="records-list" id="recordsList">
-        <div class="empty-state"><div class="big">📭</div>No markers yet.<br>Click the map to start.</div>
-      </div>
-
-      <div class="export-row">
-        <button class="btn-export" id="exportBtn" onclick="exportToExcel()" disabled>
-          ⬇ Export All to Excel (.xlsx)
-        </button>
       </div>
     </div>
   </div>
@@ -451,7 +528,7 @@ let userAddress   = 'Unknown';
 let currentFilter = 'all';
 
 // ── Map ───────────────────────────────────────────────────────────────────────
-const map = L.map('map').setView([ORIGIN.lat, ORIGIN.lng], 12);
+const map = L.map('map', { tap: true }).setView([ORIGIN.lat, ORIGIN.lng], 12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap contributors', maxZoom: 19
 }).addTo(map);
@@ -464,15 +541,17 @@ L.marker([ORIGIN.lat, ORIGIN.lng], {
   })
 }).addTo(map).bindPopup('<b>Origin: MK6 1LY</b>');
 
+// Invalidate map size when layout changes (important for mobile)
+setTimeout(() => map.invalidateSize(), 100);
+window.addEventListener('resize', () => map.invalidateSize());
+
 // ── Firebase listener ─────────────────────────────────────────────────────────
 onValue(markersRef, snapshot => {
-  // Update sync badge
   const badge = document.getElementById('syncBadge');
   badge.className = 'sync-badge connected';
   document.getElementById('syncLabel').textContent = 'Live';
   badge.querySelector('.sync-dot').classList.remove('pulse');
 
-  // Remove old map markers
   Object.values(mapMarkers).forEach(m => map.removeLayer(m));
   mapMarkers = {};
 
@@ -529,7 +608,7 @@ function setDisplay(id, text, state) {
 
 initGeolocation();
 
-// ── Map click ─────────────────────────────────────────────────────────────────
+// ── Map click / tap ───────────────────────────────────────────────────────────
 map.on('click', function(e) {
   const { lat, lng } = e.latlng;
   pendingLatLng = { lat: lat.toFixed(6), lng: lng.toFixed(6) };
@@ -539,7 +618,7 @@ map.on('click', function(e) {
   setDisplay('coordDisplay', `${pendingLatLng.lat}, ${pendingLatLng.lng}`, 'has-value');
   checkSaveReady();
   switchTab('add');
-  showToast('📍 Pin dropped — fill in details and save');
+  showToast('📍 Pin dropped — fill in details and submit');
 });
 
 // ── Mark as removed ───────────────────────────────────────────────────────────
@@ -548,30 +627,29 @@ async function markRemoved(id) {
   try {
     await update(ref(db, `markers/${id}`), { removed: true, removedAt });
     showToast('✓ TM marked as removed');
-    // Refresh popup
     const r = records[id];
     if (r && mapMarkers[id]) {
-      r.removed   = true;
-      r.removedAt = removedAt;
+      r.removed = true; r.removedAt = removedAt;
       mapMarkers[id].setIcon(buildIcon(r.type, false, true));
       mapMarkers[id].setPopupContent(buildPopupHTML(id, r));
     }
   } catch { showToast('⚠ Failed to update — check connection'); }
 }
 
-// ── Days since helper ───────────────────────────────────────────────────────
+// ── Days since ────────────────────────────────────────────────────────────────
 function daysSince(timestampStr) {
   const then = new Date(timestampStr);
   if (isNaN(then)) return 0;
-  const diffMs = Date.now() - then.getTime();
-  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  return Math.floor((Date.now() - then.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-// ── Popup HTML ───────────────────────────────────────────────────────────────
+// ── Popup HTML ────────────────────────────────────────────────────────────────
 function buildPopupHTML(id, r) {
   const removeSection = r.removed
     ? `<div class="popup-removed-stamp">✓ TM Removed · ${r.removedAt}</div>`
     : `<button class="popup-remove-btn" onclick="window._markRemoved('${id}')">✓ TM Removed</button>`;
+
+  const days = daysSince(r.timestamp);
 
   return `
   <div style="font-family:'DM Mono',monospace;font-size:11.5px;line-height:1.85;min-width:200px">
@@ -579,28 +657,27 @@ function buildPopupHTML(id, r) {
       ${TYPE_EMOJI[r.type]||''} ${r.type}
       ${r.removed ? `<span style="font-size:10px;background:#9b59b6;color:#fff;padding:1px 6px;border-radius:8px;font-family:'DM Mono',monospace;font-weight:400;vertical-align:middle">removed</span>` : ''}
     </div>
-    <div style="color:#999;font-size:10px;margin-bottom:7px">${r.timestamp} · <span style="color:#e8500a;font-weight:500">${daysSince(r.timestamp)} day${daysSince(r.timestamp)===1?'':'s'} ago</span></div>
+    <div style="color:#999;font-size:10px;margin-bottom:7px">
+      ${r.timestamp} · <span style="color:#e8500a;font-weight:500">${days} day${days===1?'':'s'} ago</span>
+    </div>
     <b>Qty:</b> ${r.qty}
-    ${r.notes ? `<br><b>Notes:</b> ${r.notes}` : ''}
+    ${r.notes  ? `<br><b>Notes:</b> ${r.notes}` : ''}
+    ${r.reporterName ? `<br><b>Reported by:</b> ${r.reporterName}` : ''}
     <br><b>Lat:</b> ${r.lat}&nbsp;&nbsp;<b>Lng:</b> ${r.lng}
-    ${r.userAddress ? `
-      <div style="border-top:1px solid #e0ddd6;margin:7px 0 5px"></div>
-      <div style="font-size:10px;color:#aaa;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px">Reported from</div>
-      ${r.userAddress}
-    ` : ''}
     ${r.photo ? `<br><img src="${r.photo}" style="width:100%;height:90px;object-fit:cover;border-radius:3px;margin-top:7px">` : ''}
     ${removeSection}
   </div>`;
 }
 
-// ── Build icon ────────────────────────────────────────────────────────────────
+// ── Icon ──────────────────────────────────────────────────────────────────────
 function buildIcon(type, pending = false, removed = false) {
-  const color = pending ? '#999' : (TYPE_COLORS[type] || '#666');
-  const emoji = pending ? '?' : (TYPE_EMOJI[type] || '📍');
+  const color    = pending ? '#999' : (TYPE_COLORS[type] || '#666');
+  const emoji    = pending ? '?' : (TYPE_EMOJI[type] || '📍');
   const greyClass = removed ? ' greyed' : '';
+  const bg       = removed ? '#555' : color;
   return L.divIcon({
     className: '',
-    html: `<div class="custom-marker${greyClass}" style="${removed ? '' : `background:${color}`}${removed ? 'background:#aaa' : ''}">
+    html: `<div class="custom-marker${greyClass}" style="background:${bg}">
              <span class="marker-emoji">${removed ? '✓' : emoji}</span>
            </div>`,
     iconSize: [28, 28], iconAnchor: [14, 28], popupAnchor: [0, -30]
@@ -634,11 +711,12 @@ function clearForm() {
   pendingLatLng = null;
   if (pendingMarker) { map.removeLayer(pendingMarker); pendingMarker = null; }
   photoDataUrl = null; photoFilename = null;
-  setDisplay('coordDisplay', 'Awaiting map click…', '');
-  document.getElementById('typeSelect').value = '';
-  document.getElementById('qtyInput').value = '';
-  document.getElementById('notesInput').value = '';
-  document.getElementById('photoInput').value = '';
+  setDisplay('coordDisplay', 'Awaiting map tap…', '');
+  document.getElementById('nameInput').value   = '';
+  document.getElementById('typeSelect').value  = '';
+  document.getElementById('qtyInput').value    = '';
+  document.getElementById('notesInput').value  = '';
+  document.getElementById('photoInput').value  = '';
   document.getElementById('photoPreview').style.display = 'none';
   document.getElementById('photoName').textContent = '';
   document.getElementById('saveBtn').disabled = true;
@@ -649,13 +727,15 @@ async function saveMarker() {
   const type  = document.getElementById('typeSelect').value;
   const qty   = parseInt(document.getElementById('qtyInput').value);
   const notes = document.getElementById('notesInput').value.trim();
+  const name  = document.getElementById('nameInput').value.trim();
   if (!pendingLatLng || !type || !qty) return;
 
   const btn = document.getElementById('saveBtn');
-  btn.disabled = true; btn.textContent = 'Saving…';
+  btn.disabled = true; btn.textContent = 'Submitting…';
 
   const record = {
     type, qty, notes,
+    reporterName: name || null,
     lat: parseFloat(pendingLatLng.lat),
     lng: parseFloat(pendingLatLng.lng),
     photo:       photoDataUrl  || null,
@@ -673,11 +753,10 @@ async function saveMarker() {
     if (pendingMarker) { map.removeLayer(pendingMarker); pendingMarker = null; }
     clearForm();
     switchTab('records');
-    showToast(`✓ ${type} saved to Firebase`);
+    showToast(`✓ ${type} submitted`);
   } catch {
-    showToast('⚠ Save failed — check connection');
-    btn.disabled = false;
-    btn.textContent = 'Save to Firebase';
+    showToast('⚠ Submit failed — check connection');
+    btn.disabled = false; btn.textContent = 'Submit';
   }
 }
 
@@ -701,10 +780,10 @@ function setFilter(f) {
 
 // ── UI ────────────────────────────────────────────────────────────────────────
 function updateUI() {
-  const entries  = Object.entries(records);
-  const total    = entries.length;
-  const removed  = entries.filter(([,r]) => r.removed).length;
-  const active   = total - removed;
+  const entries = Object.entries(records);
+  const total   = entries.length;
+  const removed = entries.filter(([,r]) => r.removed).length;
+  const active  = total - removed;
 
   document.getElementById('countDisplay').textContent = active;
   document.getElementById('statActive').textContent   = active;
@@ -725,36 +804,38 @@ function renderRecords() {
 
   const list = document.getElementById('recordsList');
   if (!filtered.length) {
-    list.innerHTML = `<div class="empty-state"><div class="big">${currentFilter === 'removed' ? '✅' : '📭'}</div>${
-      currentFilter === 'removed' ? 'No removed markers yet.' : 'No markers to show.'
-    }</div>`;
+    list.innerHTML = `<div class="empty-state">
+      <div class="big">${currentFilter === 'removed' ? '✅' : '📭'}</div>
+      ${currentFilter === 'removed' ? 'No removed markers yet.' : 'No markers to show.<br>Tap the map to start.'}
+    </div>`;
     return;
   }
 
-  // Sort: active first, then by timestamp desc
   filtered.sort((a, b) => {
     if (a[1].removed !== b[1].removed) return a[1].removed ? 1 : -1;
     return new Date(b[1].timestamp) - new Date(a[1].timestamp);
   });
 
-  list.innerHTML = filtered.map(([id, r]) => `
+  list.innerHTML = filtered.map(([id, r]) => {
+    const days = daysSince(r.timestamp);
+    return `
     <div class="record-card ${r.removed ? 'is-removed' : ''}" onclick="flyToRecord('${id}')">
       <div class="record-thumb ${r.removed ? 'greyed' : ''}">
         ${r.photo ? `<img src="${r.photo}" alt="">` : `<span>${r.removed ? '✓' : (TYPE_EMOJI[r.type]||'📍')}</span>`}
       </div>
       <div class="record-info">
         <div class="record-type">
-          <span class="type-dot" style="background:${r.removed ? '#aaa' : TYPE_COLORS[r.type]}"></span>
+          <span class="type-dot" style="background:${r.removed ? '#666' : TYPE_COLORS[r.type]}"></span>
           ${r.type} ×${r.qty}
           ${r.removed ? `<span class="removed-badge">removed</span>` : ''}
         </div>
         <div class="record-coords">${r.lat}, ${r.lng}</div>
-        <div class="record-meta">📅 ${daysSince(r.timestamp)} day${daysSince(r.timestamp)===1?'':'s'} ago${r.userAddress ? ' · '+r.userAddress : ''}</div>
+        <div class="record-meta">📅 ${days} day${days===1?'':'s'} ago${r.reporterName ? ' · ' + r.reporterName : ''}</div>
         ${r.removed && r.removedAt ? `<div class="record-removed-date">✓ Collected ${r.removedAt}</div>` : ''}
       </div>
       <button class="record-del" onclick="handleDelete(event,'${id}')" title="Delete permanently">✕</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function flyToRecord(id) {
@@ -772,14 +853,14 @@ function exportToExcel() {
   const wb = XLSX.utils.book_new();
 
   const rows = [[
-    'No.','Timestamp','Type','Quantity','Notes',
+    'No.','Timestamp','Reported By','Type','Quantity','Notes',
     'Marker Lat','Marker Lng',
     'Reporter Lat','Reporter Lng','Reporter Address',
     'Status','Removed Date/Time','Photo Filename'
   ]];
 
   entries.forEach(([, r], i) => rows.push([
-    i+1, r.timestamp, r.type, r.qty, r.notes||'',
+    i+1, r.timestamp, r.reporterName||'', r.type, r.qty, r.notes||'',
     r.lat, r.lng,
     r.userLat||'', r.userLng||'', r.userAddress||'',
     r.removed ? 'Removed' : 'Active',
@@ -789,13 +870,12 @@ function exportToExcel() {
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [
-    {wch:5},{wch:20},{wch:12},{wch:10},{wch:28},
-    {wch:13},{wch:13},{wch:14},{wch:14},{wch:32},
-    {wch:10},{wch:22},{wch:26}
+    {wch:5},{wch:20},{wch:18},{wch:12},{wch:10},{wch:28},
+    {wch:13},{wch:13},{wch:13},{wch:13},{wch:30},
+    {wch:10},{wch:22},{wch:24}
   ];
   XLSX.utils.book_append_sheet(wb, ws, 'Markers');
 
-  // Summary sheet
   const total   = entries.length;
   const removed = entries.filter(([,r]) => r.removed).length;
   const typeCounts = {};
@@ -814,7 +894,7 @@ function exportToExcel() {
   wsS['!cols'] = [{wch:26},{wch:14}];
   XLSX.utils.book_append_sheet(wb, wsS, 'Summary');
 
-  XLSX.writeFile(wb, `field-mapper-${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `tm-on-site-${new Date().toISOString().slice(0,10)}.xlsx`);
   showToast('✓ Excel downloaded');
 }
 
@@ -824,6 +904,7 @@ function switchTab(name) {
     b.classList.toggle('active', ['add','records'][i] === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
+  if (name === 'add') setTimeout(() => map.invalidateSize(), 50);
 }
 
 let toastTimer;
@@ -834,7 +915,7 @@ function showToast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
-// ── Expose to window (needed for popup onclick & inline handlers) ─────────────
+// ── Window exports ────────────────────────────────────────────────────────────
 window.switchTab      = switchTab;
 window.flyToRecord    = flyToRecord;
 window.handleDelete   = handleDelete;
