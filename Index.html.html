@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Field Mapper</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap');
+
+  :root {
+    --ink: #0f0f0f;
+    --paper: #f5f2eb;
+    --accent: #e8500a;
+    --muted: #8a8479;
+    --panel: #fffdf8;
+    --border: #d9d4c7;
+    --success: #2d7a4f;
+    --removed: #9b59b6;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Mono', monospace;
+    background: var(--paper);
+    color: var(--ink);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  header {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 0 24px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    z-index: 1000;
+  }
+  header h1 { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.05em; text-transform: uppercase; }
+  .header-right { display: flex; align-items: center; gap: 14px; }
+  .marker-count { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.08em; }
+  .marker-count span { color: var(--accent); font-weight: 500; }
+
+  .sync-badge {
+    font-size: 0.62rem; letter-spacing: 0.08em; padding: 3px 8px;
+    border-radius: 10px; display: flex; align-items: center; gap: 5px;
+    background: rgba(245,130,13,0.15); color: #f5820d;
+    border: 1px solid rgba(245,130,13,0.3); transition: all 0.3s;
+  }
+  .sync-badge.connected { background: rgba(45,122,79,0.15); color: var(--success); border-color: rgba(45,122,79,0.3); }
+  .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .sync-dot.pulse { animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .main { display: flex; flex: 1; overflow: hidden; }
+  #map { flex: 1; cursor: crosshair !important; }
+
+  .sidebar {
+    width: 360px; flex-shrink: 0;
+    background: var(--panel); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  .sidebar-tabs { display: flex; border-bottom: 1px solid var(--border); }
+  .tab-btn {
+    flex: 1; padding: 12px 8px;
+    font-family: 'DM Mono', monospace; font-size: 0.65rem;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    border: none; background: transparent; cursor: pointer;
+    color: var(--muted); border-bottom: 2px solid transparent; transition: all 0.15s;
+  }
+  .tab-btn.active { color: var(--ink); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  .tab-panel.active { display: flex; }
+
+  .form-area { flex: 1; padding: 16px 20px; overflow-y: auto; }
+
+  .instruction-box {
+    background: var(--ink); color: var(--paper);
+    padding: 10px 14px; border-radius: 4px;
+    font-size: 0.67rem; line-height: 1.6; margin-bottom: 16px;
+  }
+  .instruction-box strong { color: var(--accent); font-weight: 500; }
+
+  .section-divider {
+    font-size: 0.58rem; letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--muted); border-top: 1px solid var(--border);
+    padding-top: 12px; margin: 12px 0 10px;
+  }
+
+  .field-group { margin-bottom: 13px; }
+
+  label {
+    display: block; font-size: 0.6rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 5px;
+  }
+
+  .info-display {
+    background: var(--paper); border: 1px solid var(--border);
+    padding: 7px 10px; font-size: 0.73rem; color: var(--muted);
+    border-radius: 3px; font-family: 'DM Mono', monospace; min-height: 30px;
+    transition: all 0.2s; display: flex; align-items: center; gap: 6px;
+  }
+  .info-display.has-value { color: var(--success); border-color: var(--success); }
+  .info-display.loading   { color: #2a6dd9; border-color: #2a6dd9; }
+  .info-display.error     { color: var(--accent); border-color: var(--accent); }
+
+  select, input[type="number"], input[type="text"] {
+    width: 100%; padding: 7px 10px;
+    border: 1px solid var(--border); background: var(--paper);
+    font-family: 'DM Mono', monospace; font-size: 0.77rem;
+    color: var(--ink); border-radius: 3px; outline: none;
+    transition: border-color 0.15s; appearance: none; -webkit-appearance: none;
+  }
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a8479'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px;
+  }
+  select:focus, input:focus { border-color: var(--ink); }
+
+  .photo-upload-area {
+    border: 1.5px dashed var(--border); border-radius: 3px;
+    padding: 12px; text-align: center; cursor: pointer;
+    transition: border-color 0.15s; background: var(--paper); position: relative;
+  }
+  .photo-upload-area:hover { border-color: var(--accent); }
+  .photo-upload-area input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .photo-upload-area .upload-icon { font-size: 1.2rem; margin-bottom: 2px; }
+  .photo-upload-area p { font-size: 0.63rem; color: var(--muted); }
+  .photo-preview { margin-top: 6px; border-radius: 3px; overflow: hidden; display: none; }
+  .photo-preview img { width: 100%; height: 75px; object-fit: cover; display: block; }
+  .photo-name { font-size: 0.6rem; color: var(--success); margin-top: 3px; text-align: center; }
+
+  .btn-row { display: flex; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .btn {
+    flex: 1; padding: 10px 12px; font-family: 'DM Mono', monospace;
+    font-size: 0.67rem; letter-spacing: 0.1em; text-transform: uppercase;
+    border: none; border-radius: 3px; cursor: pointer; transition: all 0.15s; font-weight: 500;
+  }
+  .btn-primary { background: var(--ink); color: var(--paper); }
+  .btn-primary:hover { background: var(--accent); }
+  .btn-primary:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--ink); border-color: var(--ink); }
+
+  /* Records */
+  .records-header {
+    padding: 12px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  }
+  .records-header h3 { font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.05em; }
+
+  .filter-row {
+    display: flex; gap: 6px; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .filter-btn {
+    flex: 1; padding: 5px 6px; font-family: 'DM Mono', monospace;
+    font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--muted); border-radius: 3px; cursor: pointer; transition: all 0.15s;
+  }
+  .filter-btn.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .filter-btn.active.removed-filter { background: var(--removed); border-color: var(--removed); }
+
+  .records-list { flex: 1; overflow-y: auto; padding: 10px; }
+
+  .record-card {
+    background: var(--paper); border: 1px solid var(--border);
+    border-radius: 4px; padding: 9px 11px; margin-bottom: 7px;
+    display: flex; gap: 9px; align-items: flex-start;
+    transition: all 0.15s; cursor: pointer;
+  }
+  .record-card:hover { border-color: var(--ink); }
+  .record-card.is-removed {
+    opacity: 0.6;
+    background: #f0eef8;
+    border-color: #d4c8e8;
+  }
+  .record-card.is-removed:hover { border-color: var(--removed); opacity: 0.85; }
+
+  .record-thumb {
+    width: 40px; height: 40px; border-radius: 3px;
+    flex-shrink: 0; background: var(--border);
+    display: flex; align-items: center; justify-content: center; font-size: 1rem; overflow: hidden;
+  }
+  .record-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .record-thumb.greyed { filter: grayscale(1); opacity: 0.5; }
+
+  .record-info { flex: 1; min-width: 0; }
+  .record-type { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 0.78rem; margin-bottom: 1px; display: flex; align-items: center; gap: 5px; }
+  .removed-badge {
+    font-size: 0.55rem; letter-spacing: 0.08em; text-transform: uppercase;
+    background: var(--removed); color: #fff; padding: 1px 5px; border-radius: 8px;
+    font-family: 'DM Mono', monospace; font-weight: 400;
+  }
+  .record-coords { font-size: 0.58rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .record-meta { font-size: 0.6rem; color: var(--muted); margin-top: 2px; }
+  .record-removed-date { font-size: 0.58rem; color: var(--removed); margin-top: 2px; }
+
+  .record-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; padding: 2px; line-height: 1; flex-shrink: 0; transition: color 0.1s; }
+  .record-del:hover { color: var(--accent); }
+
+  .empty-state { text-align: center; padding: 36px 20px; color: var(--muted); font-size: 0.67rem; line-height: 2; }
+  .empty-state .big { font-size: 2rem; margin-bottom: 6px; }
+
+  .stats-row {
+    display: flex; gap: 0; border-top: 1px solid var(--border);
+    flex-shrink: 0; border-bottom: 1px solid var(--border);
+  }
+  .stat-box {
+    flex: 1; padding: 8px 10px; text-align: center;
+    border-right: 1px solid var(--border);
+  }
+  .stat-box:last-child { border-right: none; }
+  .stat-num { font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 800; }
+  .stat-num.active-col { color: var(--accent); }
+  .stat-num.removed-col { color: var(--removed); }
+  .stat-label { font-size: 0.55rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-top: 1px; }
+
+  .export-row { padding: 12px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .btn-export {
+    width: 100%; padding: 10px;
+    font-family: 'DM Mono', monospace; font-size: 0.68rem;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    background: var(--success); color: #fff; border: none; border-radius: 3px;
+    cursor: pointer; font-weight: 500; transition: opacity 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+  }
+  .btn-export:hover { opacity: 0.88; }
+  .btn-export:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+
+  /* Map marker styles */
+  .custom-marker {
+    width: 28px; height: 28px; border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg); border: 2px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .custom-marker.greyed {
+    filter: grayscale(1); opacity: 0.45;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  }
+  .marker-emoji { transform: rotate(45deg); font-size: 11px; }
+
+  /* Popup TM Removed button */
+  .popup-remove-btn {
+    display: block; width: 100%; margin-top: 10px; padding: 7px 10px;
+    font-family: 'DM Mono', monospace; font-size: 0.68rem;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    background: var(--removed); color: #fff; border: none;
+    border-radius: 3px; cursor: pointer; font-weight: 500;
+    transition: opacity 0.15s; text-align: center;
+  }
+  .popup-remove-btn:hover { opacity: 0.85; }
+  .popup-removed-stamp {
+    display: block; width: 100%; margin-top: 10px; padding: 7px 10px;
+    font-family: 'DM Mono', monospace; font-size: 0.65rem;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    background: #f0eef8; color: var(--removed);
+    border: 1px solid #d4c8e8; border-radius: 3px; text-align: center;
+  }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--ink); color: var(--paper); padding: 10px 20px; border-radius: 4px; font-size: 0.7rem; letter-spacing: 0.08em; z-index: 9999; transition: transform 0.25s ease; pointer-events: none; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  .type-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📍 Field Mapper</h1>
+  <div class="header-right">
+    <div class="sync-badge" id="syncBadge">
+      <span class="sync-dot pulse"></span>
+      <span id="syncLabel">Connecting…</span>
+    </div>
+    <span class="marker-count">Active: <span id="countDisplay">0</span></span>
+  </div>
+</header>
+
+<div class="main">
+  <div id="map"></div>
+
+  <div class="sidebar">
+    <div class="sidebar-tabs">
+      <button class="tab-btn active" onclick="switchTab('add')">Add Marker</button>
+      <button class="tab-btn" onclick="switchTab('records')">Records</button>
+    </div>
+
+    <!-- ADD PANEL -->
+    <div class="tab-panel active" id="tab-add">
+      <div class="form-area">
+        <div class="instruction-box">
+          <strong>→ Click anywhere on the map</strong> to drop a pin and capture coordinates, then fill in the details below.
+        </div>
+
+        <div class="section-divider">📍 Marker Details</div>
+
+        <div class="field-group">
+          <label>Marker Coordinates</label>
+          <div class="info-display" id="coordDisplay">Awaiting map click…</div>
+        </div>
+
+        <div class="field-group">
+          <label>Type</label>
+          <select id="typeSelect" onchange="checkSaveReady()">
+            <option value="">— Select type —</option>
+            <option value="Cones">🔶 Cones</option>
+            <option value="Signs">🪧 Signs</option>
+            <option value="Barriers">🚧 Barriers</option>
+            <option value="Fencing">🔒 Fencing</option>
+          </select>
+        </div>
+
+        <div class="field-group">
+          <label>Quantity</label>
+          <input type="number" id="qtyInput" min="1" placeholder="Enter quantity…" oninput="checkSaveReady()" />
+        </div>
+
+        <div class="field-group">
+          <label>Notes (optional)</label>
+          <input type="text" id="notesInput" placeholder="Any additional notes…" />
+        </div>
+
+        <div class="field-group">
+          <label>Photo (optional)</label>
+          <div class="photo-upload-area">
+            <input type="file" id="photoInput" accept="image/*" onchange="handlePhoto(event)" />
+            <div class="upload-icon">📷</div>
+            <p>Click to upload or drag &amp; drop</p>
+          </div>
+          <div class="photo-preview" id="photoPreview"><img id="photoImg" src="" alt="preview"/></div>
+          <div class="photo-name" id="photoName"></div>
+        </div>
+
+        <div class="section-divider">🧭 Your Location</div>
+
+        <div class="field-group">
+          <label>GPS Coordinates</label>
+          <div class="info-display loading" id="userLocDisplay">
+            <span class="spinner"></span><span>Detecting location…</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label>Approximate Address</label>
+          <div class="info-display" id="userAddrDisplay">Waiting for GPS…</div>
+        </div>
+
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="clearForm()">Clear</button>
+        <button class="btn btn-primary" id="saveBtn" onclick="saveMarker()" disabled>Save to Firebase</button>
+      </div>
+    </div>
+
+    <!-- RECORDS PANEL -->
+    <div class="tab-panel" id="tab-records">
+      <div class="records-header">
+        <h3>All Markers</h3>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-box">
+          <div class="stat-num active-col" id="statActive">0</div>
+          <div class="stat-label">Active</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num removed-col" id="statRemoved">0</div>
+          <div class="stat-label">Removed</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num" id="statTotal">0</div>
+          <div class="stat-label">Total</div>
+        </div>
+      </div>
+
+      <div class="filter-row">
+        <button class="filter-btn active" id="filterAll"      onclick="setFilter('all')">All</button>
+        <button class="filter-btn"        id="filterActive"   onclick="setFilter('active')">Active</button>
+        <button class="filter-btn removed-filter" id="filterRemoved" onclick="setFilter('removed')">Removed</button>
+      </div>
+
+      <div class="records-list" id="recordsList">
+        <div class="empty-state"><div class="big">📭</div>No markers yet.<br>Click the map to start.</div>
+      </div>
+
+      <div class="export-row">
+        <button class="btn-export" id="exportBtn" onclick="exportToExcel()" disabled>
+          ⬇ Export All to Excel (.xlsx)
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp }                        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, push, onValue, remove, update }
+                                                from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+// ── Firebase ──────────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey:            "AIzaSyAwladxVR-lr2c0pFhVLd1-E6y1D7q1ZBA",
+  authDomain:        "tm-on-site.firebaseapp.com",
+  databaseURL:       "https://tm-on-site-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:         "tm-on-site",
+  storageBucket:     "tm-on-site.firebasestorage.app",
+  messagingSenderId: "893813689316",
+  appId:             "1:893813689316:web:6af9df88d404db7be9d5f1"
+};
+
+const app        = initializeApp(firebaseConfig);
+const db         = getDatabase(app);
+const markersRef = ref(db, 'markers');
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const TYPE_COLORS = { Cones: '#e8500a', Signs: '#2a6dd9', Barriers: '#d4a017', Fencing: '#2d7a4f' };
+const TYPE_EMOJI  = { Cones: '🔶', Signs: '🪧', Barriers: '🚧', Fencing: '🔒' };
+const ORIGIN      = { lat: 52.0406, lng: -0.7594 };
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let records       = {};
+let mapMarkers    = {};
+let pendingLatLng = null;
+let pendingMarker = null;
+let photoDataUrl  = null;
+let photoFilename = null;
+let userLocation  = null;
+let userAddress   = 'Unknown';
+let currentFilter = 'all';
+
+// ── Map ───────────────────────────────────────────────────────────────────────
+const map = L.map('map').setView([ORIGIN.lat, ORIGIN.lng], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+
+L.marker([ORIGIN.lat, ORIGIN.lng], {
+  icon: L.divIcon({
+    className: '',
+    html: `<div style="background:#0f0f0f;color:#f5f2eb;padding:3px 8px;border-radius:3px;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.4)">🏠 MK6 1LY</div>`,
+    iconAnchor: [32, 10]
+  })
+}).addTo(map).bindPopup('<b>Origin: MK6 1LY</b>');
+
+// ── Firebase listener ─────────────────────────────────────────────────────────
+onValue(markersRef, snapshot => {
+  // Update sync badge
+  const badge = document.getElementById('syncBadge');
+  badge.className = 'sync-badge connected';
+  document.getElementById('syncLabel').textContent = 'Live';
+  badge.querySelector('.sync-dot').classList.remove('pulse');
+
+  // Remove old map markers
+  Object.values(mapMarkers).forEach(m => map.removeLayer(m));
+  mapMarkers = {};
+
+  records = snapshot.val() || {};
+
+  Object.entries(records).forEach(([id, r]) => {
+    const m = L.marker([r.lat, r.lng], { icon: buildIcon(r.type, false, r.removed) })
+      .addTo(map)
+      .bindPopup(buildPopupHTML(id, r), { maxWidth: 260 });
+    mapMarkers[id] = m;
+  });
+
+  updateUI();
+}, () => {
+  document.getElementById('syncBadge').className = 'sync-badge';
+  document.getElementById('syncLabel').textContent = 'Offline';
+});
+
+// ── Geolocation ───────────────────────────────────────────────────────────────
+function initGeolocation() {
+  if (!navigator.geolocation) {
+    setDisplay('userLocDisplay', 'Not supported', 'error');
+    setDisplay('userAddrDisplay', '—', 'error');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLocation = { lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) };
+    setDisplay('userLocDisplay', `${userLocation.lat}, ${userLocation.lng}`, 'has-value');
+    map.setView([pos.coords.latitude, pos.coords.longitude], 13);
+    L.circleMarker([pos.coords.latitude, pos.coords.longitude], {
+      radius: 8, fillColor: '#2a6dd9', color: '#fff', weight: 2.5, fillOpacity: 0.9
+    }).addTo(map).bindPopup('🧭 Your current location');
+    reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+  }, () => {
+    setDisplay('userLocDisplay', 'Access denied', 'error');
+    setDisplay('userAddrDisplay', 'Enable location & reload', 'error');
+  }, { enableHighAccuracy: true, timeout: 10000 });
+}
+
+async function reverseGeocode(lat, lng) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
+    const d   = await res.json();
+    userAddress = (d.display_name||'Unknown').split(',').slice(0,3).join(',').trim();
+    setDisplay('userAddrDisplay', userAddress, 'has-value');
+  } catch { setDisplay('userAddrDisplay', 'Could not resolve', 'error'); }
+}
+
+function setDisplay(id, text, state) {
+  const el = document.getElementById(id);
+  el.className = `info-display ${state}`;
+  el.textContent = text;
+}
+
+initGeolocation();
+
+// ── Map click ─────────────────────────────────────────────────────────────────
+map.on('click', function(e) {
+  const { lat, lng } = e.latlng;
+  pendingLatLng = { lat: lat.toFixed(6), lng: lng.toFixed(6) };
+  if (pendingMarker) map.removeLayer(pendingMarker);
+  pendingMarker = L.marker([lat, lng], { icon: buildIcon('', true), zIndexOffset: 1000 })
+    .addTo(map).bindPopup('<b>New marker</b><br>Fill in the form →').openPopup();
+  setDisplay('coordDisplay', `${pendingLatLng.lat}, ${pendingLatLng.lng}`, 'has-value');
+  checkSaveReady();
+  switchTab('add');
+  showToast('📍 Pin dropped — fill in details and save');
+});
+
+// ── Mark as removed ───────────────────────────────────────────────────────────
+async function markRemoved(id) {
+  const removedAt = new Date().toLocaleString();
+  try {
+    await update(ref(db, `markers/${id}`), { removed: true, removedAt });
+    showToast('✓ TM marked as removed');
+    // Refresh popup
+    const r = records[id];
+    if (r && mapMarkers[id]) {
+      r.removed   = true;
+      r.removedAt = removedAt;
+      mapMarkers[id].setIcon(buildIcon(r.type, false, true));
+      mapMarkers[id].setPopupContent(buildPopupHTML(id, r));
+    }
+  } catch { showToast('⚠ Failed to update — check connection'); }
+}
+
+// ── Popup HTML ────────────────────────────────────────────────────────────────
+function buildPopupHTML(id, r) {
+  const removeSection = r.removed
+    ? `<div class="popup-removed-stamp">✓ TM Removed · ${r.removedAt}</div>`
+    : `<button class="popup-remove-btn" onclick="window._markRemoved('${id}')">✓ TM Removed</button>`;
+
+  return `
+  <div style="font-family:'DM Mono',monospace;font-size:11.5px;line-height:1.85;min-width:200px">
+    <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:800;margin-bottom:3px">
+      ${TYPE_EMOJI[r.type]||''} ${r.type}
+      ${r.removed ? `<span style="font-size:10px;background:#9b59b6;color:#fff;padding:1px 6px;border-radius:8px;font-family:'DM Mono',monospace;font-weight:400;vertical-align:middle">removed</span>` : ''}
+    </div>
+    <div style="color:#999;font-size:10px;margin-bottom:7px">${r.timestamp}</div>
+    <b>Qty:</b> ${r.qty}
+    ${r.notes ? `<br><b>Notes:</b> ${r.notes}` : ''}
+    <br><b>Lat:</b> ${r.lat}&nbsp;&nbsp;<b>Lng:</b> ${r.lng}
+    ${r.userLat != null ? `
+      <div style="border-top:1px solid #e0ddd6;margin:7px 0 5px"></div>
+      <div style="font-size:10px;color:#aaa;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px">Reporter</div>
+      <b>GPS:</b> ${r.userLat}, ${r.userLng}<br>
+      <b>Addr:</b> ${r.userAddress}
+    ` : ''}
+    ${r.photo ? `<br><img src="${r.photo}" style="width:100%;height:90px;object-fit:cover;border-radius:3px;margin-top:7px">` : ''}
+    ${removeSection}
+  </div>`;
+}
+
+// ── Build icon ────────────────────────────────────────────────────────────────
+function buildIcon(type, pending = false, removed = false) {
+  const color = pending ? '#999' : (TYPE_COLORS[type] || '#666');
+  const emoji = pending ? '?' : (TYPE_EMOJI[type] || '📍');
+  const greyClass = removed ? ' greyed' : '';
+  return L.divIcon({
+    className: '',
+    html: `<div class="custom-marker${greyClass}" style="${removed ? '' : `background:${color}`}${removed ? 'background:#aaa' : ''}">
+             <span class="marker-emoji">${removed ? '✓' : emoji}</span>
+           </div>`,
+    iconSize: [28, 28], iconAnchor: [14, 28], popupAnchor: [0, -30]
+  });
+}
+
+// ── Form ──────────────────────────────────────────────────────────────────────
+function checkSaveReady() {
+  document.getElementById('saveBtn').disabled = !(
+    pendingLatLng &&
+    document.getElementById('typeSelect').value &&
+    document.getElementById('qtyInput').value
+  );
+}
+
+function handlePhoto(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  photoFilename = file.name;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    photoDataUrl = ev.target.result;
+    document.getElementById('photoImg').src = photoDataUrl;
+    document.getElementById('photoPreview').style.display = 'block';
+    document.getElementById('photoName').textContent = '✓ ' + file.name;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearForm() {
+  pendingLatLng = null;
+  if (pendingMarker) { map.removeLayer(pendingMarker); pendingMarker = null; }
+  photoDataUrl = null; photoFilename = null;
+  setDisplay('coordDisplay', 'Awaiting map click…', '');
+  document.getElementById('typeSelect').value = '';
+  document.getElementById('qtyInput').value = '';
+  document.getElementById('notesInput').value = '';
+  document.getElementById('photoInput').value = '';
+  document.getElementById('photoPreview').style.display = 'none';
+  document.getElementById('photoName').textContent = '';
+  document.getElementById('saveBtn').disabled = true;
+}
+
+// ── Save ──────────────────────────────────────────────────────────────────────
+async function saveMarker() {
+  const type  = document.getElementById('typeSelect').value;
+  const qty   = parseInt(document.getElementById('qtyInput').value);
+  const notes = document.getElementById('notesInput').value.trim();
+  if (!pendingLatLng || !type || !qty) return;
+
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  const record = {
+    type, qty, notes,
+    lat: parseFloat(pendingLatLng.lat),
+    lng: parseFloat(pendingLatLng.lng),
+    photo:       photoDataUrl  || null,
+    photoName:   photoFilename || null,
+    timestamp:   new Date().toLocaleString(),
+    userLat:     userLocation ? parseFloat(userLocation.lat) : null,
+    userLng:     userLocation ? parseFloat(userLocation.lng) : null,
+    userAddress: userAddress || null,
+    removed:     false,
+    removedAt:   null
+  };
+
+  try {
+    await push(markersRef, record);
+    if (pendingMarker) { map.removeLayer(pendingMarker); pendingMarker = null; }
+    clearForm();
+    switchTab('records');
+    showToast(`✓ ${type} saved to Firebase`);
+  } catch {
+    showToast('⚠ Save failed — check connection');
+    btn.disabled = false;
+    btn.textContent = 'Save to Firebase';
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+async function deleteRecord(e, id) {
+  e.stopPropagation();
+  if (!confirm('Delete this marker permanently?')) return;
+  try {
+    await remove(ref(db, `markers/${id}`));
+    showToast('Marker deleted');
+  } catch { showToast('⚠ Delete failed'); }
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`filter${f.charAt(0).toUpperCase()+f.slice(1)}`).classList.add('active');
+  renderRecords();
+}
+
+// ── UI ────────────────────────────────────────────────────────────────────────
+function updateUI() {
+  const entries  = Object.entries(records);
+  const total    = entries.length;
+  const removed  = entries.filter(([,r]) => r.removed).length;
+  const active   = total - removed;
+
+  document.getElementById('countDisplay').textContent = active;
+  document.getElementById('statActive').textContent   = active;
+  document.getElementById('statRemoved').textContent  = removed;
+  document.getElementById('statTotal').textContent    = total;
+  document.getElementById('exportBtn').disabled       = total === 0;
+
+  renderRecords();
+}
+
+function renderRecords() {
+  const entries = Object.entries(records);
+  const filtered = entries.filter(([,r]) => {
+    if (currentFilter === 'active')  return !r.removed;
+    if (currentFilter === 'removed') return  r.removed;
+    return true;
+  });
+
+  const list = document.getElementById('recordsList');
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty-state"><div class="big">${currentFilter === 'removed' ? '✅' : '📭'}</div>${
+      currentFilter === 'removed' ? 'No removed markers yet.' : 'No markers to show.'
+    }</div>`;
+    return;
+  }
+
+  // Sort: active first, then by timestamp desc
+  filtered.sort((a, b) => {
+    if (a[1].removed !== b[1].removed) return a[1].removed ? 1 : -1;
+    return new Date(b[1].timestamp) - new Date(a[1].timestamp);
+  });
+
+  list.innerHTML = filtered.map(([id, r]) => `
+    <div class="record-card ${r.removed ? 'is-removed' : ''}" onclick="flyToRecord('${id}')">
+      <div class="record-thumb ${r.removed ? 'greyed' : ''}">
+        ${r.photo ? `<img src="${r.photo}" alt="">` : `<span>${r.removed ? '✓' : (TYPE_EMOJI[r.type]||'📍')}</span>`}
+      </div>
+      <div class="record-info">
+        <div class="record-type">
+          <span class="type-dot" style="background:${r.removed ? '#aaa' : TYPE_COLORS[r.type]}"></span>
+          ${r.type} ×${r.qty}
+          ${r.removed ? `<span class="removed-badge">removed</span>` : ''}
+        </div>
+        <div class="record-coords">${r.lat}, ${r.lng}</div>
+        ${r.userAddress ? `<div class="record-meta">${r.userAddress}</div>` : ''}
+        ${r.removed && r.removedAt ? `<div class="record-removed-date">✓ Collected ${r.removedAt}</div>` : ''}
+      </div>
+      <button class="record-del" onclick="handleDelete(event,'${id}')" title="Delete permanently">✕</button>
+    </div>
+  `).join('');
+}
+
+function flyToRecord(id) {
+  const r = records[id];
+  if (r) { map.flyTo([r.lat, r.lng], 16, { duration: 0.8 }); mapMarkers[id]?.openPopup(); }
+}
+
+function handleDelete(e, id) { deleteRecord(e, id); }
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function exportToExcel() {
+  const entries = Object.entries(records);
+  if (!entries.length) return;
+
+  const wb = XLSX.utils.book_new();
+
+  const rows = [[
+    'No.','Timestamp','Type','Quantity','Notes',
+    'Marker Lat','Marker Lng',
+    'Reporter Lat','Reporter Lng','Reporter Address',
+    'Status','Removed Date/Time','Photo Filename'
+  ]];
+
+  entries.forEach(([, r], i) => rows.push([
+    i+1, r.timestamp, r.type, r.qty, r.notes||'',
+    r.lat, r.lng,
+    r.userLat||'', r.userLng||'', r.userAddress||'',
+    r.removed ? 'Removed' : 'Active',
+    r.removedAt||'',
+    r.photoName||''
+  ]));
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [
+    {wch:5},{wch:20},{wch:12},{wch:10},{wch:28},
+    {wch:13},{wch:13},{wch:14},{wch:14},{wch:32},
+    {wch:10},{wch:22},{wch:26}
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, 'Markers');
+
+  // Summary sheet
+  const total   = entries.length;
+  const removed = entries.filter(([,r]) => r.removed).length;
+  const typeCounts = {};
+  entries.forEach(([,r]) => typeCounts[r.type] = (typeCounts[r.type]||0)+1);
+
+  const sumRows = [
+    ['Summary',''],
+    ['Total Markers', total],
+    ['Active', total - removed],
+    ['Removed / Collected', removed],
+    ['',''],
+    ['By Type','Count'],
+    ...Object.entries(typeCounts)
+  ];
+  const wsS = XLSX.utils.aoa_to_sheet(sumRows);
+  wsS['!cols'] = [{wch:26},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, wsS, 'Summary');
+
+  XLSX.writeFile(wb, `field-mapper-${new Date().toISOString().slice(0,10)}.xlsx`);
+  showToast('✓ Excel downloaded');
+}
+
+// ── Tabs / Toast ──────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) =>
+    b.classList.toggle('active', ['add','records'][i] === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+}
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+// ── Expose to window (needed for popup onclick & inline handlers) ─────────────
+window.switchTab      = switchTab;
+window.flyToRecord    = flyToRecord;
+window.handleDelete   = handleDelete;
+window.exportToExcel  = exportToExcel;
+window.saveMarker     = saveMarker;
+window.clearForm      = clearForm;
+window.handlePhoto    = handlePhoto;
+window.checkSaveReady = checkSaveReady;
+window.setFilter      = setFilter;
+window._markRemoved   = markRemoved;
+</script>
+</body>
+</html>
